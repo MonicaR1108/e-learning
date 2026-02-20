@@ -119,4 +119,22 @@
             }
         });
     }
+
+    const editToggles = document.querySelectorAll('.edit-toggle');
+    editToggles.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const projectId = btn.getAttribute('data-project-id');
+            const panel = document.getElementById(`edit-project-${projectId}`);
+            if (!panel) return;
+
+            const isHidden = panel.hasAttribute('hidden');
+            document.querySelectorAll('.project-edit-wrap').forEach((item) => item.setAttribute('hidden', 'hidden'));
+
+            if (isHidden) {
+                panel.removeAttribute('hidden');
+            } else {
+                panel.setAttribute('hidden', 'hidden');
+            }
+        });
+    });
 })();

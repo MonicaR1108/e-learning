@@ -337,6 +337,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        if ($action === 'update_project') {
+            $projectId = (int) ($_POST['project_id'] ?? 0);
+            $title = clean_input($_POST['title'] ?? '');
+            $description = clean_input($_POST['description'] ?? '');
+            $technologies = clean_input($_POST['technologies'] ?? '');
+
+            if ($title === '') {
+                $errors[] = 'Project title is required.';
+            }
+            if ($description === '') {
+                $errors[] = 'Project description is required.';
+            }
+            if ($technologies === '') {
+                $errors[] = 'Technologies are required.';
+            }
+
+            $stmt = $conn->prepare('SELECT id FROM projects WHERE id = ? AND user_id = ? LIMIT 1');
+            $stmt->bind_param('ii', $projectId, $userId);
+            $stmt->execute();
+            $project = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            if (!$project) {
+                $errors[] = 'Project not found.';
+            }
+
+            if (empty($errors)) {
+                $conn->begin_transaction();
+                $uploadedPaths = [];
+                try {
+                    $stmt = $conn->prepare('UPDATE projects SET title = ?, description = ?, technologies = ?, updated_at = NOW() WHERE id = ? AND user_id = ?');
+                    $stmt->bind_param('sssii', $title, $description, $technologies, $projectId, $userId);
+                    if (!$stmt->execute()) {
+                        throw new RuntimeException('Could not update project.');
+                    }
+                    $stmt->close();
+
+                    $filesInput = $_FILES['project_files_new'] ?? null;
+                    if ($filesInput && is_array($filesInput['name'])) {
+                        $allowed = ['pdf', 'doc', 'docx', 'txt', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'zip'];
+                        foreach ($filesInput['name'] as $idx => $name) {
+                            if ($name === '') {
+                                continue;
+                            }
+
+                            $single = [
+                                'name' => $filesInput['name'][$idx],
+                                'type' => $filesInput['type'][$idx],
+                                'tmp_name' => $filesInput['tmp_name'][$idx],
+                                'error' => $filesInput['error'][$idx],
+                                'size' => $filesInput['size'][$idx],
+                            ];
+
+                            $fileErrors = [];
+                            $uploaded = upload_file($single, 'uploads/projects', $allowed, 10 * 1024 * 1024, $fileErrors, 'Project file');
+                            if (!$uploaded) {
+                                throw new RuntimeException($fileErrors[0] ?? 'Invalid project file.');
+                            }
+
+                            $uploadedPaths[] = $uploaded['path'];
+
+                            $stmt = $conn->prepare('INSERT INTO project_files (project_id, original_name, stored_name, file_path, mime_type, file_size) VALUES (?, ?, ?, ?, ?, ?)');
+                            $stmt->bind_param(
+                                'issssi',
+                                $projectId,
+                                $uploaded['original_name'],
+                                $uploaded['stored_name'],
+                                $uploaded['path'],
+                                $uploaded['mime_type'],
+                                $uploaded['size']
+                            );
+                            if (!$stmt->execute()) {
+                                throw new RuntimeException('Could not save new project file.');
+                            }
+                            $stmt->close();
+                        }
+                    }
+
+                    $conn->commit();
+                    $success = 'Project updated successfully.';
+                } catch (Throwable $ex) {
+                    $conn->rollback();
+                    foreach ($uploadedPaths as $path) {
+                        remove_local_file($path);
+                    }
+                    $errors[] = $ex->getMessage();
+                }
+            }
+        }
+
         if ($action === 'delete_project') {
             $projectId = (int) ($_POST['project_id'] ?? 0);
 
@@ -561,6 +651,7 @@ $courseLink = $courseLinks[$user['course']] ?? 'https://developer.mozilla.org/';
                             <div class="project-header">
                                 <h3><?= e((string) $project['title']) ?></h3>
                                 <div class="project-actions">
+                                    <button type="button" class="btn-inline edit-toggle" data-project-id="<?= (int) $project['id'] ?>">Edit</button>
                                     <a class="btn-inline" href="dashboard.php?export_project=<?= (int) $project['id'] ?>">Export</a>
                                     <form method="post" onsubmit="return confirm('Remove this full project?');">
                                         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
@@ -572,18 +663,61 @@ $courseLink = $courseLinks[$user['course']] ?? 'https://developer.mozilla.org/';
                             </div>
                             <p><?= e((string) $project['description']) ?></p>
                             <p><strong>Technologies:</strong> <?= e((string) $project['technologies']) ?></p>
+
+                            <div class="project-edit-wrap" id="edit-project-<?= (int) $project['id'] ?>" hidden>
+                                <form method="post" enctype="multipart/form-data" class="project-edit-form">
+                                    <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+                                    <input type="hidden" name="action" value="update_project">
+                                    <input type="hidden" name="project_id" value="<?= (int) $project['id'] ?>">
+
+                                    <label>Project Title
+                                        <input type="text" name="title" value="<?= e((string) $project['title']) ?>" required>
+                                    </label>
+                                    <label>Description
+                                        <textarea name="description" rows="3" required><?= e((string) $project['description']) ?></textarea>
+                                    </label>
+                                    <label>Technologies Used (comma separated)
+                                        <input type="text" name="technologies" value="<?= e((string) $project['technologies']) ?>" required>
+                                    </label>
+                                    <label>Add More Files (optional)
+                                        <input type="file" name="project_files_new[]" multiple>
+                                    </label>
+
+                                    <button type="submit" class="btn-inline">Save Changes</button>
+                                </form>
+                            </div>
+
                             <ul class="file-tree">
                                 <?php foreach ($project['files'] as $file): ?>
                                     <li>
                                         <span><?= e((string) $file['original_name']) ?></span>
                                         <div class="inline-actions">
-                                            <a href="../<?= e((string) $file['file_path']) ?>" target="_blank" rel="noopener">View</a>
-                                            <a href="../<?= e((string) $file['file_path']) ?>" download>Download</a>
+                                            <a class="icon-action" href="../<?= e((string) $file['file_path']) ?>" target="_blank" rel="noopener" title="View file" aria-label="View file">
+                                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z"></path>
+                                                    <circle cx="12" cy="12" r="3"></circle>
+                                                </svg>
+                                            </a>
+                                            <a class="icon-action" href="../<?= e((string) $file['file_path']) ?>" download title="Download file" aria-label="Download file">
+                                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path d="M12 3v11"></path>
+                                                    <path d="m7 10 5 5 5-5"></path>
+                                                    <path d="M4 20h16"></path>
+                                                </svg>
+                                            </a>
                                             <form method="post" onsubmit="return confirm('Remove this file?');">
                                                 <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
                                                 <input type="hidden" name="action" value="delete_project_file">
                                                 <input type="hidden" name="file_id" value="<?= (int) $file['id'] ?>">
-                                                <button type="submit" class="link-btn">Remove</button>
+                                                <button type="submit" class="icon-action icon-danger" title="Remove file" aria-label="Remove file">
+                                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                                        <path d="M3 6h18"></path>
+                                                        <path d="M8 6V4h8v2"></path>
+                                                        <path d="M19 6l-1 14H6L5 6"></path>
+                                                        <path d="M10 11v6"></path>
+                                                        <path d="M14 11v6"></path>
+                                                    </svg>
+                                                </button>
                                             </form>
                                         </div>
                                     </li>

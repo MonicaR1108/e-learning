@@ -33,6 +33,10 @@
     cursor: pointer;
     text-decoration: none;
     font: inherit;
+    width: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .nav-btn.active,
@@ -165,11 +169,14 @@
 }
 
 .project-list {
-    display: grid;
+    display: flex;
+    flex-wrap: wrap;
     gap: 12px;
 }
 
 .project-card {
+    flex: 1 1 360px;
+    min-width: 300px;
     border: 1px solid #e5e7eb;
     border-radius: 10px;
     padding: 12px;
@@ -197,11 +204,32 @@
     font-size: 0.9rem;
     cursor: pointer;
     text-decoration: none;
+    width: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn-inline.danger {
     background: #fee2e2;
     color: #991b1b;
+}
+
+.project-actions form {
+    margin: 0;
+}
+
+.project-edit-wrap {
+    margin: 12px 0;
+    padding: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #f8fafc;
+}
+
+.project-edit-form {
+    display: grid;
+    gap: 10px;
 }
 
 .file-tree {
@@ -228,6 +256,44 @@
     margin: 0;
 }
 
+.icon-action {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #1e40af;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.icon-action svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.icon-action:hover {
+    background: #eff6ff;
+}
+
+.icon-action.icon-danger {
+    color: #b91c1c;
+    border-color: #fecaca;
+    background: #fef2f2;
+}
+
+.icon-action.icon-danger:hover {
+    background: #fee2e2;
+}
+
 .link-btn {
     background: none;
     border: 0;
@@ -250,5 +316,10 @@
     .file-tree li {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    .project-card {
+        flex-basis: 100%;
+        min-width: 0;
     }
 }
